@@ -113,48 +113,224 @@ with st.expander("Configure advanced bearing capacity factors (SNAME Tables C6.1
 spud = Spudcan(rig_name=rig, B=B, A=A, tip_elev=tip, preload_MN=Pmn,
                beta=beta_deg, alpha=alpha)
 
-st.markdown("#### Soil profile")
-st.caption("Add layers from seabed downward. The app will calculate ρ automatically from your Su profile.")
+def soil_input_widget():
+    """
+    Interactive soil input widget.
+    Returns list of SoilLayer objects compatible with existing code.
+    
+    This is a MINIMAL replacement - only the input method changes.
+    Everything else in your app stays the same!
+    """
+    
+    st.markdown("#### Soil profile")
+    st.caption("Add layers from seabed downward. Use interactive table or paste from Excel.")
+    
+    # Input method tabs
+    tab1, tab2 = st.tabs(["📊 Interactive Table", "📋 Paste from Excel"])
+    
+    with tab1:
+        layers = _interactive_input()
+    
+    with tab2:
+        layers = _paste_input()
+    
+    return layers
 
-# Layer builder
-if "layers" not in st.session_state:
-    st.session_state.layers = []
 
-def _add_layer():
-    st.session_state.layers.append({
-        "name": f"Layer {len(st.session_state.layers)+1}",
-        "z_top": 0.0 if not st.session_state.layers else st.session_state.layers[-1]["z_bot"],
-        "z_bot": (0.0 if not st.session_state.layers else st.session_state.layers[-1]["z_bot"]) + 2.0,
-        "type": "clay",
-        "gamma_pairs": "0,10.0; 2,10.0",
-        "su_pairs":    "0,30;   2,35",
-        "phi_pairs":   "",
-    })
-
-def _parse_pairs(s: str):
-    s = (s or "").strip()
-    if not s:
+def _interactive_input():
+    """Interactive table input - add one layer at a time."""
+    
+    # Initialize session state
+    if 'soil_layers' not in st.session_state:
+        st.session_state.soil_layers = []
+    
+    # Form to add new layer
+    with st.form("add_layer"):
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+        
+        with col1:
+            name = st.text_input("Layer name", placeholder="e.g., Soft Clay")
+            soil_type = st.selectbox("Type", ["clay", "silt", "sand"])
+        
+        with col2:
+            z_top = st.number_input("Top (m)", value=0.0, step=0.5)
+            z_bot = st.number_input("Bottom (m)", value=10.0, step=0.5)
+        
+        with col3:
+            gamma_top = st.number_input("γ' top (kN/m³)", value=7.0, step=0.5)
+            gamma_bot = st.number_input("γ' bot (kN/m³)", value=8.0, step=0.5)
+        
+        with col4:
+            if soil_type in ["clay", "silt"]:
+                st.write("**Su (kPa)**")
+                param_top = st.number_input("Su top", value=10.0, step=5.0, key="su_top")
+                param_bot = st.number_input("Su bot", value=50.0, step=5.0, key="su_bot")
+                param_type = "Su"
+            else:
+                st.write("**φ' (deg)**")
+                param_top = st.number_input("φ' top", value=30.0, step=1.0, key="phi_top")
+                param_bot = st.number_input("φ' bot", value=35.0, step=1.0, key="phi_bot")
+                param_type = "phi"
+        
+        submitted = st.form_submit_button("➕ Add Layer", use_container_width=True)
+        
+        if submitted and name:
+            layer_data = {
+                'name': name,
+                'type': soil_type,
+                'z_top': z_top,
+                'z_bot': z_bot,
+                'gamma_top': gamma_top,
+                'gamma_bot': gamma_bot,
+                'param_type': param_type,
+                'param_top': param_top,
+                'param_bot': param_bot
+            }
+            st.session_state.soil_layers.append(layer_data)
+            st.rerun()
+    
+    # Display current layers
+    if st.session_state.soil_layers:
+        st.write(f"**Current profile: {len(st.session_state.soil_layers)} layers**")
+        
+        # Create display table
+        display_data = []
+        for i, layer in enumerate(st.session_state.soil_layers):
+            display_data.append({
+                '#': i+1,
+                'Name': layer['name'],
+                'Type': layer['type'],
+                'Top': f"{layer['z_top']:.1f}m",
+                'Bot': f"{layer['z_bot']:.1f}m",
+                'γ\'': f"{layer['gamma_top']:.1f}-{layer['gamma_bot']:.1f}",
+                layer['param_type']: f"{layer['param_top']:.0f}-{layer['param_bot']:.0f}"
+            })
+        
+        st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
+        
+        # Delete options
+        col_a, col_b, col_c = st.columns([1, 1, 2])
+        with col_a:
+            if st.button("🗑️ Clear All", use_container_width=True):
+                st.session_state.soil_layers = []
+                st.rerun()
+        
+        with col_b:
+            del_idx = st.number_input("Delete #", min_value=1, 
+                                     max_value=len(st.session_state.soil_layers), 
+                                     value=1, step=1)
+            if st.button("🗑️ Delete", use_container_width=True):
+                st.session_state.soil_layers.pop(del_idx - 1)
+                st.rerun()
+        
+        # Convert to SoilLayer objects
+        return _convert_to_layers(st.session_state.soil_layers)
+    
+    else:
+        st.info("👆 Add your first layer using the form above")
         return []
-    pts = []
-    for tok in s.split(";"):
-        tok = tok.strip()
-        if not tok:
-            continue
-        d, v = tok.split(",")
-        pts.append(SoilPoint(float(d.strip()), float(v.strip())))
-    return pts
 
-st.button("➕ Add layer", on_click=_add_layer)
-for i, L in enumerate(st.session_state.layers):
-    with st.expander(f"Layer {i+1}", expanded=True):
-        c1, c2, c3, c4 = st.columns([1.2,1.2,1.2,1.2])
-        L["name"]  = c1.text_input("Name", L["name"], key=f"name{i}")
-        L["z_top"] = c2.number_input("z_top (m)", value=float(L["z_top"]), key=f"z1{i}", step=0.1)
-        L["z_bot"] = c3.number_input("z_bot (m)", value=float(L["z_bot"]), key=f"z2{i}", step=0.1)
-        L["type"]  = c4.selectbox("Type", ["clay","sand","silt","unknown"], index=["clay","sand","silt","unknown"].index(L["type"]), key=f"type{i}")
-        L["gamma_pairs"] = st.text_input("γ′ pairs 'z,val; z,val; ...'  (kN/m³)", L["gamma_pairs"], key=f"g{i}")
-        L["su_pairs"]    = st.text_input("Su pairs 'z,val; z,val; ...'  (kPa)", L["su_pairs"],    key=f"su{i}")
-        L["phi_pairs"]   = st.text_input("ϕ′ pairs 'z,val; z,val; ...' (deg)", L["phi_pairs"],   key=f"phi{i}")
+
+def _paste_input():
+    """Paste data from Excel/CSV."""
+    
+    st.write("**Expected format:**")
+    st.code("""Name, Type, Top, Bot, γ'_top, γ'_bot, Strength_top, Strength_bot
+Soft Clay, clay, 0, 10, 7.0, 7.5, 10, 50
+Sand, sand, 10, 20, 9.0, 9.5, 32, 35""", language="csv")
+    
+    pasted = st.text_area("Paste CSV data:", height=150, placeholder="Name, Type, Top, Bot...")
+    
+    if pasted:
+        try:
+            from io import StringIO
+            df = pd.read_csv(StringIO(pasted), skipinitialspace=True)
+            
+            # Parse into layer data
+            layers_data = []
+            for _, row in df.iterrows():
+                soil_type = str(row['Type']).lower().strip()
+                
+                layer_data = {
+                    'name': str(row['Name']),
+                    'type': soil_type,
+                    'z_top': float(row['Top']),
+                    'z_bot': float(row['Bot']),
+                    'gamma_top': float(row[df.columns[4]]),  # γ'_top column
+                    'gamma_bot': float(row[df.columns[5]]),  # γ'_bot column
+                    'param_type': 'Su' if soil_type in ['clay', 'silt'] else 'phi',
+                    'param_top': float(row[df.columns[6]]),  # Strength top
+                    'param_bot': float(row[df.columns[7]])   # Strength bot
+                }
+                layers_data.append(layer_data)
+            
+            st.success(f"✅ Parsed {len(layers_data)} layers")
+            
+            # Show preview
+            preview_data = []
+            for i, layer in enumerate(layers_data):
+                preview_data.append({
+                    '#': i+1,
+                    'Name': layer['name'],
+                    'Type': layer['type'],
+                    'Depths': f"{layer['z_top']:.1f}-{layer['z_bot']:.1f}m",
+                    'γ\'': f"{layer['gamma_top']:.1f}-{layer['gamma_bot']:.1f}",
+                    layer['param_type']: f"{layer['param_top']:.0f}-{layer['param_bot']:.0f}"
+                })
+            
+            st.dataframe(pd.DataFrame(preview_data), use_container_width=True, hide_index=True)
+            
+            return _convert_to_layers(layers_data)
+            
+        except Exception as e:
+            st.error(f"Error parsing data: {str(e)}")
+            st.write("Please check format and try again.")
+            return []
+    
+    return []
+
+
+def _convert_to_layers(layers_data):
+    """Convert layer data to SoilLayer objects (compatible with existing code)."""
+    
+    soil_layers = []
+    
+    for data in layers_data:
+        # Gamma points
+        gamma = [
+            SoilPoint(data['z_top'], data['gamma_top']),
+            SoilPoint(data['z_bot'], data['gamma_bot'])
+        ]
+        
+        # Strength points
+        su = []
+        phi = []
+        
+        if data['param_type'] == 'Su':
+            su = [
+                SoilPoint(data['z_top'], data['param_top']),
+                SoilPoint(data['z_bot'], data['param_bot'])
+            ]
+        else:
+            phi = [
+                SoilPoint(data['z_top'], data['param_top']),
+                SoilPoint(data['z_bot'], data['param_bot'])
+            ]
+        
+        # Create SoilLayer object
+        layer = SoilLayer(
+            name=data['name'],
+            z_top=data['z_top'],
+            z_bot=data['z_bot'],
+            soil_type=data['type'],
+            gamma=gamma,
+            su=su,
+            phi=phi
+        )
+        
+        soil_layers.append(layer)
+    
+    return soil_layers
 
 st.divider()
 
