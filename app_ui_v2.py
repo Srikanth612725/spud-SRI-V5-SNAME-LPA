@@ -1,19 +1,16 @@
 """
-app_ui_v2.py - Spud-SRI Version 2 (COMPLETE)
-=============================================
+app_ui_v2_enhanced.py - Spud-SRI Version 2 (ENHANCED)
+=======================================================
 
-Enhanced Streamlit interface with two major upgrades:
+Enhanced Streamlit interface with improved soil profile input that allows
+multiple data points per parameter within each layer.
 
-UPGRADE 1: Zero load until tip penetration
-- The penetration curve correctly starts at zero load until the widest
-  section of the spudcan enters the soil.
+Key improvements:
+- Multiple γ', Su, and φ' data points within each layer
+- Better representation of complex soil profiles
+- Maintains compatibility with existing computation engine
 
-UPGRADE 2: Advanced Nc' calculation from SNAME Tables C6.1-C6.6
-- New input fields for spudcan cone angle (β) and surface roughness (α)
-- Automatic calculation of embedment depth ratio and strength gradient
-- More accurate bearing capacity prediction in normally consolidated clays
-
-Run this script with `streamlit run app_ui_v2.py` to launch the app.
+Run this script with `streamlit run app_ui_v2_enhanced.py` to launch the app.
 """
 
 import io
@@ -21,7 +18,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from lpa_v50_v4 import (
+from lpa_v50_v2 import (
     Spudcan, SoilPoint, SoilLayer,
     compute_envelopes, penetration_results,
     USE_MIN_CU_POINT_AVG_DEFAULT, APPLY_PHI_REDUCTION_DEFAULT,
@@ -33,8 +30,8 @@ st.set_page_config(
     page_icon="💎",
 )
 
-st.title("spud-SRI · Leg Penetration (SNAME) · Version 5")
-st.caption("✨ Upgraded with zero-load tip penetration and advanced Nc' from Tables C6.1-C6.6")
+st.title("spud-SRI · Leg Penetration (SNAME) · Version 2 Enhanced")
+st.caption("✨ Upgraded with zero-load tip penetration, advanced Nc', and flexible soil profile input")
 
 with st.sidebar:
     st.subheader("Analysis switches")
@@ -133,167 +130,287 @@ def _convert_to_layers(layers_data):
     soil_layers = []
     
     for data in layers_data:
-        # Gamma points
-        gamma = [
-            SoilPoint(data['z_top'], data['gamma_top']),
-            SoilPoint(data['z_bot'], data['gamma_bot'])
-        ]
-        
-        # Strength points
-        su = []
-        phi = []
-        
-        if data['param_type'] == 'Su':
-            su = [
-                SoilPoint(data['z_top'], data['param_top']),
-                SoilPoint(data['z_bot'], data['param_bot'])
-            ]
-        else:
-            phi = [
-                SoilPoint(data['z_top'], data['param_top']),
-                SoilPoint(data['z_bot'], data['param_bot'])
-            ]
-        
         # Create SoilLayer object
         layer = SoilLayer(
             name=data['name'],
             z_top=data['z_top'],
             z_bot=data['z_bot'],
             soil_type=data['type'],
-            gamma=gamma,
-            su=su,
-            phi=phi
+            gamma=data.get('gamma_points', []),
+            su=data.get('su_points', []),
+            phi=data.get('phi_points', [])
         )
         
         soil_layers.append(layer)
     
     return soil_layers
 
-def _interactive_input():
-    """Interactive table input - add one layer at a time."""
+def _enhanced_interactive_input():
+    """Enhanced interactive table input - allows multiple data points per parameter."""
     
     # Initialize session state for advanced input
-    if 'soil_layers_adv' not in st.session_state:
-        st.session_state.soil_layers_adv = []
+    if 'soil_layers_enhanced' not in st.session_state:
+        st.session_state.soil_layers_enhanced = []
     
-    # Form to add new layer
-    with st.form("add_layer"):
-        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-        
-        with col1:
-            name = st.text_input("Layer name", placeholder="e.g., Soft Clay")
-            soil_type = st.selectbox("Type", ["clay", "silt", "sand"])
-        
-        with col2:
-            z_top = st.number_input("Top (m)", value=0.0, step=0.5)
-            z_bot = st.number_input("Bottom (m)", value=10.0, step=0.5)
-        
-        with col3:
-            gamma_top = st.number_input("γ' top (kN/m³)", value=7.0, step=0.5)
-            gamma_bot = st.number_input("γ' bot (kN/m³)", value=8.0, step=0.5)
-        
-        with col4:
-            if soil_type in ["clay", "silt"]:
-                st.write("**Su (kPa)**")
-                param_top = st.number_input("Su top", value=10.0, step=5.0, key="su_top")
-                param_bot = st.number_input("Su bot", value=50.0, step=5.0, key="su_bot")
-                param_type = "Su"
-            else:
-                st.write("**φ' (deg)**")
-                param_top = st.number_input("φ' top", value=30.0, step=1.0, key="phi_top")
-                param_bot = st.number_input("φ' bot", value=35.0, step=1.0, key="phi_bot")
-                param_type = "phi"
-        
-        submitted = st.form_submit_button("➕ Add Layer", use_container_width=True)
-        
-        if submitted and name:
-            layer_data = {
-                'name': name,
-                'type': soil_type,
-                'z_top': z_top,
-                'z_bot': z_bot,
-                'gamma_top': gamma_top,
-                'gamma_bot': gamma_bot,
-                'param_type': param_type,
-                'param_top': param_top,
-                'param_bot': param_bot
-            }
-            st.session_state.soil_layers_adv.append(layer_data)
+    # Add new layer button
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("➕ Add New Layer", use_container_width=True, type="primary"):
+            st.session_state.soil_layers_enhanced.append({
+                'name': f"Layer {len(st.session_state.soil_layers_enhanced)+1}",
+                'type': 'clay',
+                'z_top': 0.0 if not st.session_state.soil_layers_enhanced else st.session_state.soil_layers_enhanced[-1]['z_bot'],
+                'z_bot': (0.0 if not st.session_state.soil_layers_enhanced else st.session_state.soil_layers_enhanced[-1]['z_bot']) + 10.0,
+                'gamma_points': [],
+                'su_points': [],
+                'phi_points': []
+            })
             st.rerun()
     
-    # Display current layers
-    if st.session_state.soil_layers_adv:
-        st.write(f"**Current profile: {len(st.session_state.soil_layers_adv)} layers**")
+    # Display and edit layers
+    for idx, layer in enumerate(st.session_state.soil_layers_enhanced):
+        with st.expander(f"**{layer['name']}** ({layer['type']}, {layer['z_top']:.1f}-{layer['z_bot']:.1f}m)", expanded=True):
+            
+            # Basic layer properties
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                layer['name'] = st.text_input("Layer name", value=layer['name'], key=f"name_enh_{idx}")
+            
+            with col2:
+                layer['type'] = st.selectbox("Type", ["clay", "silt", "sand"], 
+                                            index=["clay", "silt", "sand"].index(layer['type']), 
+                                            key=f"type_enh_{idx}")
+            
+            with col3:
+                layer['z_top'] = st.number_input("Top (m)", value=layer['z_top'], step=0.5, key=f"ztop_enh_{idx}")
+            
+            with col4:
+                layer['z_bot'] = st.number_input("Bottom (m)", value=layer['z_bot'], step=0.5, key=f"zbot_enh_{idx}")
+            
+            st.markdown("---")
+            
+            # Data points for each parameter
+            tabs = st.tabs(["γ' (kN/m³)", "Su (kPa)" if layer['type'] in ['clay', 'silt'] else "φ' (deg)", "Actions"])
+            
+            # Gamma prime tab
+            with tabs[0]:
+                st.markdown("**Submerged unit weight data points**")
+                
+                # Add data point form
+                with st.form(f"add_gamma_{idx}"):
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col1:
+                        new_z = st.number_input("Depth (m)", value=layer['z_top'], 
+                                              min_value=layer['z_top'], max_value=layer['z_bot'], 
+                                              step=0.5, key=f"gamma_z_new_{idx}")
+                    with col2:
+                        new_val = st.number_input("γ' (kN/m³)", value=8.0, step=0.5, key=f"gamma_v_new_{idx}")
+                    with col3:
+                        if st.form_submit_button("Add Point", use_container_width=True):
+                            if 'gamma_points' not in layer:
+                                layer['gamma_points'] = []
+                            layer['gamma_points'].append(SoilPoint(new_z, new_val))
+                            layer['gamma_points'].sort(key=lambda p: p.z)
+                            st.rerun()
+                
+                # Display existing points
+                if layer.get('gamma_points'):
+                    df_gamma = pd.DataFrame([
+                        {'Depth (m)': p.z, 'γ\' (kN/m³)': p.v, 'Delete': f"🗑️ {i}"}
+                        for i, p in enumerate(layer['gamma_points'])
+                    ])
+                    st.dataframe(df_gamma[['Depth (m)', 'γ\' (kN/m³)']], use_container_width=True, hide_index=True)
+                    
+                    # Delete point
+                    if len(layer['gamma_points']) > 0:
+                        del_idx = st.number_input("Delete point #", min_value=1, 
+                                                 max_value=len(layer['gamma_points']), 
+                                                 value=1, step=1, key=f"del_gamma_{idx}")
+                        if st.button(f"Delete Point #{del_idx}", key=f"del_gamma_btn_{idx}"):
+                            layer['gamma_points'].pop(del_idx - 1)
+                            st.rerun()
+                else:
+                    st.info("No data points yet. Add points above.")
+            
+            # Strength parameter tab
+            with tabs[1]:
+                if layer['type'] in ['clay', 'silt']:
+                    st.markdown("**Undrained shear strength data points**")
+                    param_name = 'su_points'
+                    param_label = 'Su (kPa)'
+                    default_val = 30.0
+                else:
+                    st.markdown("**Friction angle data points**")
+                    param_name = 'phi_points'
+                    param_label = 'φ\' (deg)'
+                    default_val = 30.0
+                
+                # Add data point form
+                with st.form(f"add_param_{idx}"):
+                    col1, col2, col3 = st.columns([1, 1, 1])
+                    with col1:
+                        new_z = st.number_input("Depth (m)", value=layer['z_top'], 
+                                              min_value=layer['z_top'], max_value=layer['z_bot'], 
+                                              step=0.5, key=f"param_z_new_{idx}")
+                    with col2:
+                        new_val = st.number_input(param_label, value=default_val, step=5.0, key=f"param_v_new_{idx}")
+                    with col3:
+                        if st.form_submit_button("Add Point", use_container_width=True):
+                            if param_name not in layer:
+                                layer[param_name] = []
+                            layer[param_name].append(SoilPoint(new_z, new_val))
+                            layer[param_name].sort(key=lambda p: p.z)
+                            st.rerun()
+                
+                # Display existing points
+                if layer.get(param_name):
+                    df_param = pd.DataFrame([
+                        {'Depth (m)': p.z, param_label: p.v}
+                        for i, p in enumerate(layer[param_name])
+                    ])
+                    st.dataframe(df_param, use_container_width=True, hide_index=True)
+                    
+                    # Delete point
+                    if len(layer[param_name]) > 0:
+                        del_idx = st.number_input("Delete point #", min_value=1, 
+                                                 max_value=len(layer[param_name]), 
+                                                 value=1, step=1, key=f"del_param_{idx}")
+                        if st.button(f"Delete Point #{del_idx}", key=f"del_param_btn_{idx}"):
+                            layer[param_name].pop(del_idx - 1)
+                            st.rerun()
+                else:
+                    st.info("No data points yet. Add points above.")
+            
+            # Actions tab
+            with tabs[2]:
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button(f"🗑️ Delete Layer", key=f"del_layer_{idx}", use_container_width=True):
+                        st.session_state.soil_layers_enhanced.pop(idx)
+                        st.rerun()
+                
+                with col2:
+                    # Add quick fill option
+                    if st.button(f"🎯 Auto-fill with linear profile", key=f"autofill_{idx}", use_container_width=True):
+                        # Auto-fill with top and bottom values
+                        if not layer.get('gamma_points'):
+                            layer['gamma_points'] = [
+                                SoilPoint(layer['z_top'], 7.0),
+                                SoilPoint(layer['z_bot'], 8.0)
+                            ]
+                        
+                        if layer['type'] in ['clay', 'silt'] and not layer.get('su_points'):
+                            layer['su_points'] = [
+                                SoilPoint(layer['z_top'], 20.0),
+                                SoilPoint(layer['z_bot'], 50.0)
+                            ]
+                        elif layer['type'] == 'sand' and not layer.get('phi_points'):
+                            layer['phi_points'] = [
+                                SoilPoint(layer['z_top'], 30.0),
+                                SoilPoint(layer['z_bot'], 35.0)
+                            ]
+                        st.rerun()
+    
+    # Summary of all layers
+    if st.session_state.soil_layers_enhanced:
+        st.markdown("---")
+        st.markdown("### Profile Summary")
         
-        # Create display table
-        display_data = []
-        for i, layer in enumerate(st.session_state.soil_layers_adv):
-            display_data.append({
+        summary_data = []
+        for i, layer in enumerate(st.session_state.soil_layers_enhanced):
+            summary_data.append({
                 '#': i+1,
                 'Name': layer['name'],
                 'Type': layer['type'],
-                'Top': f"{layer['z_top']:.1f}m",
-                'Bot': f"{layer['z_bot']:.1f}m",
-                'γ\'': f"{layer['gamma_top']:.1f}-{layer['gamma_bot']:.1f}",
-                layer['param_type']: f"{layer['param_top']:.0f}-{layer['param_bot']:.0f}"
+                'Depths': f"{layer['z_top']:.1f}-{layer['z_bot']:.1f}m",
+                'γ\' points': len(layer.get('gamma_points', [])),
+                'Su points': len(layer.get('su_points', [])) if layer['type'] in ['clay', 'silt'] else '—',
+                'φ\' points': len(layer.get('phi_points', [])) if layer['type'] == 'sand' else '—'
             })
         
-        st.dataframe(pd.DataFrame(display_data), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
         
-        # Delete options
-        col_a, col_b, col_c = st.columns([1, 1, 2])
-        with col_a:
-            if st.button("🗑️ Clear All", use_container_width=True):
-                st.session_state.soil_layers_adv = []
-                st.rerun()
+        # Clear all button
+        if st.button("🗑️ Clear All Layers", use_container_width=True):
+            st.session_state.soil_layers_enhanced = []
+            st.rerun()
         
-        with col_b:
-            del_idx = st.number_input("Delete #", min_value=1, 
-                                     max_value=len(st.session_state.soil_layers_adv), 
-                                     value=1, step=1)
-            if st.button("🗑️ Delete", use_container_width=True):
-                st.session_state.soil_layers_adv.pop(del_idx - 1)
-                st.rerun()
-        
-        # Convert to SoilLayer objects
-        return _convert_to_layers(st.session_state.soil_layers_adv)
-    
+        return _convert_to_layers(st.session_state.soil_layers_enhanced)
     else:
-        st.info("👆 Add your first layer using the form above")
+        st.info("👆 Click 'Add New Layer' to start building your soil profile")
         return []
 
-def _paste_input():
-    """Paste data from Excel/CSV."""
+def _paste_input_enhanced():
+    """Enhanced paste data from Excel/CSV with multiple points per layer."""
     
-    st.write("**Expected format:**")
-    st.code("""Name, Type, Top, Bot, γ'_top, γ'_bot, Strength_top, Strength_bot
-Soft Clay, clay, 0, 10, 7.0, 7.5, 10, 50
-Sand, sand, 10, 20, 9.0, 9.5, 32, 35""", language="csv")
+    st.write("**Expected format (multiple points per parameter):**")
+    st.code("""Layer, Type, z_top, z_bot, Parameter, Depth1, Value1, Depth2, Value2, ...
+Soft Clay, clay, 0, 10, gamma, 0, 7.0, 5, 7.5, 10, 8.0
+Soft Clay, clay, 0, 10, su, 0, 20, 3, 25, 6, 30, 10, 40
+Sand, sand, 10, 20, gamma, 10, 9.0, 15, 9.3, 20, 9.5
+Sand, sand, 10, 20, phi, 10, 32, 15, 33, 20, 35""", language="csv")
     
-    pasted = st.text_area("Paste CSV data:", height=150, placeholder="Name, Type, Top, Bot...")
+    pasted = st.text_area("Paste CSV data:", height=200, placeholder="Layer, Type, z_top, z_bot, Parameter...")
     
     if pasted:
         try:
             from io import StringIO
-            df = pd.read_csv(StringIO(pasted), skipinitialspace=True)
+            lines = pasted.strip().split('\n')
             
-            # Parse into layer data
-            layers_data = []
-            for _, row in df.iterrows():
-                soil_type = str(row['Type']).lower().strip()
+            # Parse into layer structure
+            layers_dict = {}
+            
+            for line in lines:
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) < 7:  # Minimum: name, type, z_top, z_bot, param, one depth-value pair
+                    continue
                 
-                layer_data = {
-                    'name': str(row['Name']),
-                    'type': soil_type,
-                    'z_top': float(row['Top']),
-                    'z_bot': float(row['Bot']),
-                    'gamma_top': float(row[df.columns[4]]),  # γ'_top column
-                    'gamma_bot': float(row[df.columns[5]]),  # γ'_bot column
-                    'param_type': 'Su' if soil_type in ['clay', 'silt'] else 'phi',
-                    'param_top': float(row[df.columns[6]]),  # Strength top
-                    'param_bot': float(row[df.columns[7]])   # Strength bot
-                }
-                layers_data.append(layer_data)
+                name = parts[0]
+                soil_type = parts[1].lower()
+                z_top = float(parts[2])
+                z_bot = float(parts[3])
+                param_type = parts[4].lower()
+                
+                # Create unique key for layer
+                layer_key = f"{name}_{z_top}_{z_bot}"
+                
+                # Initialize layer if not exists
+                if layer_key not in layers_dict:
+                    layers_dict[layer_key] = {
+                        'name': name,
+                        'type': soil_type,
+                        'z_top': z_top,
+                        'z_bot': z_bot,
+                        'gamma_points': [],
+                        'su_points': [],
+                        'phi_points': []
+                    }
+                
+                # Parse depth-value pairs
+                points = []
+                for i in range(5, len(parts), 2):
+                    if i+1 < len(parts):
+                        depth = float(parts[i])
+                        value = float(parts[i+1])
+                        points.append(SoilPoint(depth, value))
+                
+                # Add points to appropriate parameter
+                if param_type in ['gamma', 'γ', "γ'"]:
+                    layers_dict[layer_key]['gamma_points'].extend(points)
+                elif param_type in ['su', 'cu']:
+                    layers_dict[layer_key]['su_points'].extend(points)
+                elif param_type in ['phi', 'φ', "φ'"]:
+                    layers_dict[layer_key]['phi_points'].extend(points)
+            
+            # Convert to list
+            layers_data = list(layers_dict.values())
+            
+            # Sort points within each layer
+            for layer in layers_data:
+                layer['gamma_points'].sort(key=lambda p: p.z)
+                layer['su_points'].sort(key=lambda p: p.z)
+                layer['phi_points'].sort(key=lambda p: p.z)
             
             st.success(f"✅ Parsed {len(layers_data)} layers")
             
@@ -305,8 +422,9 @@ Sand, sand, 10, 20, 9.0, 9.5, 32, 35""", language="csv")
                     'Name': layer['name'],
                     'Type': layer['type'],
                     'Depths': f"{layer['z_top']:.1f}-{layer['z_bot']:.1f}m",
-                    'γ\'': f"{layer['gamma_top']:.1f}-{layer['gamma_bot']:.1f}",
-                    layer['param_type']: f"{layer['param_top']:.0f}-{layer['param_bot']:.0f}"
+                    'γ\' points': len(layer['gamma_points']),
+                    'Su points': len(layer['su_points']) if layer['type'] in ['clay', 'silt'] else '—',
+                    'φ\' points': len(layer['phi_points']) if layer['type'] == 'sand' else '—'
                 })
             
             st.dataframe(pd.DataFrame(preview_data), use_container_width=True, hide_index=True)
@@ -320,26 +438,23 @@ Sand, sand, 10, 20, 9.0, 9.5, 32, 35""", language="csv")
     
     return []
 
-def soil_input_widget():
+def soil_input_widget_enhanced():
     """
-    Interactive soil input widget.
+    Enhanced interactive soil input widget with multiple data points per parameter.
     Returns list of SoilLayer objects compatible with existing code.
-    
-    This is a MINIMAL replacement - only the input method changes.
-    Everything else in your app stays the same!
     """
     
     st.markdown("#### Soil profile")
-    st.caption("Add layers from seabed downward. Use interactive table or paste from Excel.")
+    st.caption("Add layers with multiple measurement points per parameter for accurate representation")
     
     # Input method tabs
     tab1, tab2 = st.tabs(["📊 Interactive Table", "📋 Paste from Excel"])
     
     with tab1:
-        layers = _interactive_input()
+        layers = _enhanced_interactive_input()
     
     with tab2:
-        layers = _paste_input()
+        layers = _paste_input_enhanced()
     
     return layers
 
@@ -347,15 +462,15 @@ def soil_input_widget():
 st.markdown("#### Soil Profile Input Method")
 input_method = st.radio(
     "Select input method:",
-    ["Simple Layer Builder", "Advanced Widget (Table/Excel)"],
+    ["Simple Layer Builder", "Enhanced Interactive (Multiple Points)"],
     horizontal=True,
-    help="Choose between simple text input or advanced table/Excel paste functionality"
+    help="Enhanced method allows multiple data points per parameter within each layer"
 )
 
 if input_method == "Simple Layer Builder":
     # ============= SIMPLE LAYER BUILDER =============
     st.markdown("##### Soil profile")
-    st.caption("Add layers from seabed downward. The app will calculate ρ automatically from your Su profile.")
+    st.caption("Add layers from seabed downward. Use semicolon-separated pairs for data points.")
     
     # Layer builder
     if "layers" not in st.session_state:
@@ -381,18 +496,21 @@ if input_method == "Simple Layer Builder":
             L["z_bot"] = c3.number_input("z_bot (m)", value=float(L["z_bot"]), key=f"z2{i}", step=0.1)
             L["type"]  = c4.selectbox("Type", ["clay","sand","silt","unknown"], 
                                       index=["clay","sand","silt","unknown"].index(L["type"]), key=f"type{i}")
-            L["gamma_pairs"] = st.text_input("γ′ pairs 'z,val; z,val; ...'  (kN/m³)", L["gamma_pairs"], key=f"g{i}")
-            L["su_pairs"]    = st.text_input("Su pairs 'z,val; z,val; ...'  (kPa)", L["su_pairs"],    key=f"su{i}")
-            L["phi_pairs"]   = st.text_input("ϕ′ pairs 'z,val; z,val; ...' (deg)", L["phi_pairs"],   key=f"phi{i}")
+            L["gamma_pairs"] = st.text_input("γ′ pairs 'z,val; z,val; ...'  (kN/m³)", L["gamma_pairs"], key=f"g{i}",
+                                            help="Example: 0,7.0; 5,7.5; 10,8.0")
+            L["su_pairs"]    = st.text_input("Su pairs 'z,val; z,val; ...'  (kPa)", L["su_pairs"],    key=f"su{i}",
+                                            help="Example: 0,20; 3,25; 6,30; 10,40")
+            L["phi_pairs"]   = st.text_input("ϕ′ pairs 'z,val; z,val; ...' (deg)", L["phi_pairs"],   key=f"phi{i}",
+                                            help="Example: 10,32; 15,33; 20,35")
     
     # Store method for run analysis
     st.session_state.input_method = "simple"
 
 else:
-    # ============= ADVANCED WIDGET =============
-    layers_widget = soil_input_widget()
+    # ============= ENHANCED INTERACTIVE WIDGET =============
+    layers_widget = soil_input_widget_enhanced()
     st.session_state.widget_layers = layers_widget
-    st.session_state.input_method = "advanced"
+    st.session_state.input_method = "enhanced"
 
 st.divider()
 
@@ -417,7 +535,7 @@ if do_run:
                     )
                 )
     else:
-        # Advanced method - already converted to SoilLayer objects
+        # Enhanced method - already converted to SoilLayer objects
         layers = st.session_state.get('widget_layers', [])
     
     if not layers:
