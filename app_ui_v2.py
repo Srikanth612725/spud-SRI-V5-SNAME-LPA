@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-
 from lpa_v50_v4 import (
     Spudcan, SoilPoint, SoilLayer,
     compute_envelopes, penetration_results,
@@ -30,7 +29,7 @@ from lpa_v50_v4 import (
 )
 
 st.set_page_config(
-    page_title="spud-SRI V2 / Leg Penetration (SNAME)",
+    page_title="spud-SRI V5 / Leg Penetration (SNAME)",
     page_icon="💎",
 )
 
@@ -331,8 +330,6 @@ def _convert_to_layers(layers_data):
         soil_layers.append(layer)
     
     return soil_layers
-
-st.divider()
 
 do_run = st.button("Run analysis", type="primary")
 if do_run:
