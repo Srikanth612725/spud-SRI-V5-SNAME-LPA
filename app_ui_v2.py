@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from lpa_v50_v2 import (
+from lpa_v50_v4 import (
     Spudcan, SoilPoint, SoilLayer,
     compute_envelopes, penetration_results,
     USE_MIN_CU_POINT_AVG_DEFAULT, APPLY_PHI_REDUCTION_DEFAULT,
@@ -30,7 +30,7 @@ st.set_page_config(
     page_icon="💎",
 )
 
-st.title("spud-SRI · Leg Penetration (SNAME) · Version 2 Enhanced")
+st.title("spud-SRI · Leg Penetration (SNAME) · Version 5.1")
 st.caption("✨ Upgraded with zero-load tip penetration, advanced Nc', and flexible soil profile input")
 
 with st.sidebar:
