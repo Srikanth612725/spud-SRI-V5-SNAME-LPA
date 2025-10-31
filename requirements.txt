@@ -1,4 +1,4 @@
-# Spud-SRI v2.0 Requirements
+# Spud-SRI v5.0 Requirements
 # Python 3.8+ required
 
 # Core scientific computing
