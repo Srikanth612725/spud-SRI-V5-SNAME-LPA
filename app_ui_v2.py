@@ -22,7 +22,7 @@ import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
 
-from lpa_v50_v3 import (
+from lpa_v50_v4 import (
     Spudcan, SoilPoint, SoilLayer,
     compute_envelopes, penetration_results,
     USE_MIN_CU_POINT_AVG_DEFAULT, APPLY_PHI_REDUCTION_DEFAULT,
