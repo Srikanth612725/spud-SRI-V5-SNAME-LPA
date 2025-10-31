@@ -10,14 +10,6 @@
 **Before:** `16m` ❌  
 **After:** `16-21m (punch-through zone)` ✅
 
----
-
-## 📦 Download (4 Core Files)
-
-1. **improved_soil_input_ui.py** ⭐ NEW UI
-2. **enhanced_penetration_prediction.py** ⭐ SMART PREDICTIONS
-3. **lpa_v50_v4.py** (from V4)
-4. **improved_plotting_v4.py** (from V4)
 
 ---
 
