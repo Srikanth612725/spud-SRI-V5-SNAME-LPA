@@ -25,12 +25,24 @@ from lpa_v50_v4 import (
     APPLY_WINDWARD_FACTOR_DEFAULT, APPLY_SQUEEZE_TRIGGER_DEFAULT,
 )
 
+# Import enhanced plotting functions
+try:
+    from improved_plotting_v4 import (
+        plot_penetration_curve_v4,
+        create_streamlit_plot_with_controls,
+        add_failure_mode_annotations
+    )
+    ENHANCED_PLOTTING_AVAILABLE = True
+except ImportError:
+    ENHANCED_PLOTTING_AVAILABLE = False
+    st.warning("Enhanced plotting module not found. Using basic plotting.")
+
 st.set_page_config(
     page_title="spud-SRI V5 / Leg Penetration (SNAME)",
     page_icon="💎",
 )
 
-st.title("spud-SRI · Leg Penetration (SNAME) · Version 5.2")
+st.title("spud-SRI · Leg Penetration (SNAME) · Version 2 Enhanced")
 st.caption("✨ Upgraded with zero-load tip penetration, advanced Nc', and flexible soil profile input")
 
 with st.sidebar:
@@ -584,27 +596,48 @@ if do_run:
     else:
         st.info("✅ **V2 Upgrade Active:** Zero-load until tip penetration (enable advanced Nc' above for full V2)")
 
-    # --- Compact, high-DPI chart (Matplotlib) ---
-    fig, ax = plt.subplots(figsize=(4.2, 6.2), dpi=200)
-    ax.plot(df["idle_clay_MN"], df["depth"], lw=0.8, ls="-", color="0.6", label="Idle Clay")
-    ax.plot(df["idle_sand_MN"], df["depth"], lw=0.8, ls="--", color="0.6", label="Idle Sand")
-    ax.plot(df["real_MN"], df["depth"], lw=1.8, color="#0033cc", label="REAL (governing)")
+    # --- Enhanced Plotting with Controls ---
+    if ENHANCED_PLOTTING_AVAILABLE:
+        # Use the enhanced plotting with interactive controls
+        create_streamlit_plot_with_controls(df, spud, pen)
+        
+        # Optional: Add a checkbox to show failure modes
+        if 'squeezing_active' in df.columns:
+            show_failures = st.checkbox("Show failure mode zones on plot", value=False)
+            if show_failures:
+                st.subheader("📊 Penetration Curve with Failure Modes")
+                fig, ax = plot_penetration_curve_v4(
+                    df=df,
+                    preload_MN=spud.preload_MN,
+                    tip_offset_m=spud.tip_elev,
+                    rig_name=spud.rig_name
+                )
+                add_failure_mode_annotations(ax, df)
+                st.pyplot(fig)
+                plt.close(fig)
+    else:
+        # Fallback to basic plotting if enhanced module not available
+        st.subheader("📊 Penetration Curve")
+        fig, ax = plt.subplots(figsize=(4.2, 6.2), dpi=200)
+        ax.plot(df["idle_clay_MN"], df["depth"], lw=0.8, ls="-", color="0.6", label="Idle Clay")
+        ax.plot(df["idle_sand_MN"], df["depth"], lw=0.8, ls="--", color="0.6", label="Idle Sand")
+        ax.plot(df["real_MN"], df["depth"], lw=1.8, color="#0033cc", label="REAL (governing)")
 
-    # preload line
-    ax.axvline(spud.preload_MN, ymin=0, ymax=1, color="red", lw=1.2, ls="--", label="Preload")
+        # preload line
+        ax.axvline(spud.preload_MN, ymin=0, ymax=1, color="red", lw=1.2, ls="--", label="Preload")
 
-    # Add horizontal line at tip_elev to show where capacity starts
-    if spud.tip_elev > 0:
-        ax.axhline(spud.tip_elev, xmin=0, xmax=1, color="orange", lw=1.0, ls=":", 
-                  label=f"Tip offset ({spud.tip_elev:.2f}m)")
+        # Add horizontal line at tip_elev to show where capacity starts
+        if spud.tip_elev > 0:
+            ax.axhline(spud.tip_elev, xmin=0, xmax=1, color="orange", lw=1.0, ls=":", 
+                      label=f"Tip offset ({spud.tip_elev:.2f}m)")
 
-    ax.set_xlabel("Leg load (MN)")
-    ax.set_ylabel("Penetration of widest section (m)")
-    ax.invert_yaxis()
-    ax.grid(True, ls=":", lw=0.6, color="0.7")
-    ax.set_xlim(left=0)
-    ax.legend(loc="upper right", fontsize=7, frameon=True)
-    st.pyplot(fig, clear_figure=True)
+        ax.set_xlabel("Leg load (MN)")
+        ax.set_ylabel("Penetration of widest section (m)")
+        ax.invert_yaxis()
+        ax.grid(True, ls=":", lw=0.6, color="0.7")
+        ax.set_xlim(left=0)
+        ax.legend(loc="upper right", fontsize=7, frameon=True)
+        st.pyplot(fig, clear_figure=True)
 
     # --- Table & downloads ---
     st.subheader("Detailed table")
