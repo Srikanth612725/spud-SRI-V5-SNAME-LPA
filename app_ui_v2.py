@@ -30,7 +30,7 @@ st.set_page_config(
     page_icon="💎",
 )
 
-st.title("spud-SRI · Leg Penetration (SNAME) · Version 5.1")
+st.title("spud-SRI · Leg Penetration (SNAME) · Version 2 Enhanced")
 st.caption("✨ Upgraded with zero-load tip penetration, advanced Nc', and flexible soil profile input")
 
 with st.sidebar:
@@ -508,8 +508,7 @@ if input_method == "Simple Layer Builder":
 
 else:
     # ============= ENHANCED INTERACTIVE WIDGET =============
-    layers_widget = soil_input_widget_enhanced()
-    st.session_state.widget_layers = layers_widget
+    soil_input_widget_enhanced()
     st.session_state.input_method = "enhanced"
 
 st.divider()
@@ -535,8 +534,11 @@ if do_run:
                     )
                 )
     else:
-        # Enhanced method - already converted to SoilLayer objects
-        layers = st.session_state.get('widget_layers', [])
+        # Enhanced method - convert directly from session state
+        if 'soil_layers_enhanced' in st.session_state:
+            layers = _convert_to_layers(st.session_state.soil_layers_enhanced)
+        else:
+            layers = []
     
     if not layers:
         st.error("Please add at least one soil layer.")
