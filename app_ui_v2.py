@@ -42,7 +42,7 @@ st.set_page_config(
     page_icon="💎",
 )
 
-st.title("spud-SRI · Leg Penetration (SNAME) · Version 2 Enhanced")
+st.title("spud-SRI · Leg Penetration (SNAME) · Version 5.6")
 st.caption("✨ Upgraded with zero-load tip penetration, advanced Nc', and flexible soil profile input")
 
 with st.sidebar:
@@ -557,24 +557,55 @@ if do_run:
         st.stop()
 
     # Compute
-    df = compute_envelopes(
-        spud=spud,
-        layers=layers,
-        max_depth=dmax,
-        dz=dz,
-        use_min_cu=use_min_cu,
-        phi_reduction=phi_reduce,
-        windward_factor=windward80,
-        squeeze_trigger=squeeze_trig,
-        meyerhof_table=None,
-    )
+    with st.spinner("Computing penetration analysis..."):
+        df = compute_envelopes(
+            spud=spud,
+            layers=layers,
+            max_depth=dmax,
+            dz=dz,
+            use_min_cu=use_min_cu,
+            phi_reduction=phi_reduce,
+            windward_factor=windward80,
+            squeeze_trigger=squeeze_trig,
+            meyerhof_table=None,
+        )
 
-    # Penetration results
-    pen = penetration_results(spud, df)
+        # Penetration results
+        pen = penetration_results(spud, df)
+        
+        # STORE RESULTS IN SESSION STATE TO PERSIST ACROSS RERUNS
+        st.session_state.analysis_results = {
+            'df': df,
+            'pen': pen,
+            'spud': spud,
+            'use_advanced_nc': use_advanced_nc,
+            'beta_deg': beta_deg,
+            'alpha': alpha
+        }
+        st.session_state.analysis_run = True
+
+# Display results if analysis has been run
+if st.session_state.get('analysis_run', False):
+    # Retrieve stored results
+    df = st.session_state.analysis_results['df']
+    pen = st.session_state.analysis_results['pen']
+    spud = st.session_state.analysis_results['spud']
+    use_advanced_nc = st.session_state.analysis_results['use_advanced_nc']
+    beta_deg = st.session_state.analysis_results.get('beta_deg')
+    alpha = st.session_state.analysis_results.get('alpha')
 
     # --- Results summary ---
     with st.container():
         st.subheader("Results")
+        
+        # Add clear button to reset analysis
+        col_head1, col_head2 = st.columns([5, 1])
+        with col_head2:
+            if st.button("🔄 Clear", help="Clear results and start new analysis"):
+                st.session_state.analysis_run = False
+                st.session_state.analysis_results = None
+                st.rerun()
+        
         cols = st.columns(3)
         cols[0].metric("Preload per leg", f"{spud.preload_MN:.2f} MN")
         
@@ -595,6 +626,9 @@ if do_run:
         st.info("🎯 **V2 Upgrades Active:** Zero-load until tip penetration + Advanced Nc' from SNAME tables")
     else:
         st.info("✅ **V2 Upgrade Active:** Zero-load until tip penetration (enable advanced Nc' above for full V2)")
+    
+    # Add persistence message
+    st.success("✅ **Results saved!** You can now interact with plot controls without losing your analysis.")
 
     # --- Enhanced Plotting with Controls ---
     if ENHANCED_PLOTTING_AVAILABLE:
@@ -654,3 +688,11 @@ if do_run:
         "When advanced Nc' is enabled, bearing capacity factors are interpolated from SNAME Tables C6.1-C6.6 "
         "based on spudcan geometry and automatically calculated embedment/strength-gradient parameters."
     )
+
+# End of results display section
+else:
+    # Show message when no analysis has been run yet
+    if st.session_state.get('soil_layers_enhanced') or st.session_state.get('layers'):
+        st.info("👆 Click 'Run analysis' to compute penetration results")
+    else:
+        st.info("👆 Add soil layers and click 'Run analysis' to begin")
