@@ -142,15 +142,41 @@ def _convert_to_layers(layers_data):
     soil_layers = []
     
     for data in layers_data:
+        # Ensure we have at least some data points
+        gamma_points = data.get('gamma_points', [])
+        su_points = data.get('su_points', [])
+        phi_points = data.get('phi_points', [])
+        
+        # If no gamma points, add default linear profile
+        if not gamma_points:
+            gamma_points = [
+                SoilPoint(data['z_top'], 7.0),
+                SoilPoint(data['z_bot'], 8.0)
+            ]
+        
+        # If clay/silt and no su points, add default
+        if data['type'] in ['clay', 'silt'] and not su_points:
+            su_points = [
+                SoilPoint(data['z_top'], 20.0),
+                SoilPoint(data['z_bot'], 40.0)
+            ]
+        
+        # If sand and no phi points, add default
+        if data['type'] == 'sand' and not phi_points:
+            phi_points = [
+                SoilPoint(data['z_top'], 30.0),
+                SoilPoint(data['z_bot'], 32.0)
+            ]
+        
         # Create SoilLayer object
         layer = SoilLayer(
             name=data['name'],
             z_top=data['z_top'],
             z_bot=data['z_bot'],
             soil_type=data['type'],
-            gamma=data.get('gamma_points', []),
-            su=data.get('su_points', []),
-            phi=data.get('phi_points', [])
+            gamma=gamma_points,
+            su=su_points,
+            phi=phi_points
         )
         
         soil_layers.append(layer)
@@ -516,23 +542,27 @@ if input_method == "Simple Layer Builder":
                                             help="Example: 10,32; 15,33; 20,35")
     
     # Store method for run analysis
-    st.session_state.input_method = "simple"
+    st.session_state.current_input_method = "simple"
 
 else:
     # ============= ENHANCED INTERACTIVE WIDGET =============
     soil_input_widget_enhanced()
-    st.session_state.input_method = "enhanced"
+    st.session_state.current_input_method = "enhanced"
 
 st.divider()
 
 # ============= Run Analysis Button =============
 do_run = st.button("Run analysis", type="primary")
 if do_run:
+    # Debug: Show current input method
+    current_method = st.session_state.get('current_input_method', 'unknown')
+    
     # Build SoilLayer list based on input method
-    if st.session_state.get('input_method') == 'simple':
+    layers = []
+    
+    if current_method == 'simple':
         # Simple method - from st.session_state.layers
-        layers = []
-        if 'layers' in st.session_state:
+        if 'layers' in st.session_state and st.session_state.layers:
             for L in st.session_state.layers:
                 layers.append(
                     SoilLayer(
@@ -545,15 +575,33 @@ if do_run:
                         phi=_parse_pairs(L["phi_pairs"]),
                     )
                 )
-    else:
+    elif current_method == 'enhanced':
         # Enhanced method - convert directly from session state
-        if 'soil_layers_enhanced' in st.session_state:
-            layers = _convert_to_layers(st.session_state.soil_layers_enhanced)
-        else:
-            layers = []
+        if 'soil_layers_enhanced' in st.session_state and st.session_state.soil_layers_enhanced:
+            try:
+                layers = _convert_to_layers(st.session_state.soil_layers_enhanced)
+            except Exception as e:
+                st.error(f"Error converting layers: {str(e)}")
+                layers = []
     
     if not layers:
-        st.error("Please add at least one soil layer.")
+        # Provide more helpful error message
+        if current_method == 'enhanced':
+            if 'soil_layers_enhanced' not in st.session_state:
+                st.error("No layers found. Please add layers using the 'Add New Layer' button above.")
+            elif not st.session_state.soil_layers_enhanced:
+                st.error("Layer list is empty. Please add at least one soil layer.")
+            else:
+                st.error("Layers need data points. Please add γ' and Su/φ' values to each layer.")
+        elif current_method == 'simple':
+            if 'layers' not in st.session_state:
+                st.error("No layers found. Please add layers using the 'Add layer' button above.")
+            elif not st.session_state.layers:
+                st.error("Layer list is empty. Please add at least one soil layer.")
+            else:
+                st.error("Could not process layers. Please check that each layer has valid data.")
+        else:
+            st.error(f"Unknown input method: {current_method}. Please select an input method above.")
         st.stop()
 
     # Compute
