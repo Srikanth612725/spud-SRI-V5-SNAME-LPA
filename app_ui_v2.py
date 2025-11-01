@@ -30,7 +30,7 @@ st.set_page_config(
     page_icon="💎",
 )
 
-st.title("spud-SRI · Leg Penetration (SNAME) · Version 2 Enhanced")
+st.title("spud-SRI · Leg Penetration (SNAME) · Version 5.2")
 st.caption("✨ Upgraded with zero-load tip penetration, advanced Nc', and flexible soil profile input")
 
 with st.sidebar:
