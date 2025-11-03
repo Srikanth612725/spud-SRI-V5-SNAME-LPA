@@ -638,10 +638,21 @@ def detect_failure_modes(
                     punch_cc_depths.append(z)
             
             # Punch-through sand/clay check
+            # Punch-through sand/clay check - CORRECTED
             if top.soil_type == "sand" and bot.soil_type in ("clay", "silt"):
                 H = top.z_bot - z
                 if H > 0:
-                    punch_sc_depths.append(z)
+                    # Calculate capacities to compare
+                    Fpt = punchthrough_capacity(spud, z, layers, backflow_zero=False)
+                    Fs = sand_capacity(spud, z, layers, apply_phi_reduction=False)
+                    
+                    # Only flag if punch capacity < sand capacity
+                    if Fpt is not None and Fs is not None and Fpt < Fs:
+                        punch_sc_depths.append(z)
+            'if top.soil_type == "sand" and bot.soil_type in ("clay", "silt"):
+                'H = top.z_bot - z
+                'if H > 0:
+                    'punch_sc_depths.append(z)
     
     # Consolidate continuous ranges
     def get_range(depths_list):
