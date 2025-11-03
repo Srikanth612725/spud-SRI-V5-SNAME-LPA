@@ -649,10 +649,10 @@ def detect_failure_modes(
                     # Only flag if punch capacity < sand capacity
                     if Fpt is not None and Fs is not None and Fpt < Fs:
                         punch_sc_depths.append(z)
-            'if top.soil_type == "sand" and bot.soil_type in ("clay", "silt"):
-                'H = top.z_bot - z
-                'if H > 0:
-                    'punch_sc_depths.append(z)
+            #if top.soil_type == "sand" and bot.soil_type in ("clay", "silt"):
+                #'H = top.z_bot - z
+                #'if H > 0:
+                 #   'punch_sc_depths.append(z)
     
     # Consolidate continuous ranges
     def get_range(depths_list):
@@ -762,10 +762,10 @@ def compute_envelopes(
                         punch_sc_active = "YES"
                     else:
                         punch_sc_active = "NO"  # Capacity stable/increases - no risk
-            'if top.soil_type == "sand" and bot.soil_type in ("clay","silt"):
-               ' H = top.z_bot - z
-              '  if H > 0 and Fpt is not None and Fpt > 0:
-                   ' punch_sc_active = "YES"
+            #if top.soil_type == "sand" and bot.soil_type in ("clay","silt"):
+               # H = top.z_bot - z
+              #  if H > 0 and Fpt is not None and Fpt > 0:
+                   # punch_sc_active = "YES"
 
         real_clay = None
         if Fc is not None:
