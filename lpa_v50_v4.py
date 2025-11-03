@@ -740,10 +740,21 @@ def compute_envelopes(
                     punch_cc_active = "YES"
             
             # Check punch-through sand/clay
+
+            # Check punch-through sand/clay
             if top.soil_type == "sand" and bot.soil_type in ("clay","silt"):
                 H = top.z_bot - z
                 if H > 0 and Fpt is not None and Fpt > 0:
-                    punch_sc_active = "YES"
+                    # CRITICAL FIX: Only flag if punch capacity < sand capacity
+                    # (indicates capacity DROP = actual punch-through risk)
+                    if Fs is not None and Fpt < Fs:
+                        punch_sc_active = "YES"
+                    else:
+                        punch_sc_active = "NO"  # Capacity stable/increases - no risk
+            'if top.soil_type == "sand" and bot.soil_type in ("clay","silt"):
+               ' H = top.z_bot - z
+              '  if H > 0 and Fpt is not None and Fpt > 0:
+                   ' punch_sc_active = "YES"
 
         real_clay = None
         if Fc is not None:
