@@ -394,7 +394,7 @@ def _overburden(z: float, layers: List[SoilLayer], dz: float = 0.1) -> float:
     zs = np.arange(0.0, z + 1e-9, dz)
     gammas = np.array([_gamma_prime(zi, layers) for zi in zs], dtype=float)
     gammas[np.isnan(gammas)] = 0.0
-    return float(np.trapz(gammas, zs))
+    return float(np.trapezoid(gammas, zs))
 
 def _calculate_rho_2R_over_cum(z: float, B: float, layers: List[SoilLayer]) -> float:
     c_um = _interp(0.0, layers[_layer_index(0.0, layers)].su)
