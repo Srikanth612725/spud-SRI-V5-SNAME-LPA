@@ -368,6 +368,38 @@ def _avg_over(z1: float, z2: float, prof: List[SoilPoint], dz: float = 0.05) -> 
     vals = vals[~np.isnan(vals)]
     return float(vals.mean()) if vals.size else np.nan
 
+def _cross_layer_su_avg(z1: float, z2: float, layers: List[SoilLayer], dz: float = 0.05) -> float:
+    """Average su from z1 to z2, crossing layer boundaries correctly.
+
+    When the SNAME B/2 averaging window enters a sand (or non-clay) layer,
+    that zone contributes su = 0.  Once the first non-clay layer is hit,
+    all remaining depth in the window also contributes 0 — the sand breaks
+    the clay failure mechanism, so clay below the sand is irrelevant.
+
+    This reproduces the characteristic curved/decreasing capacity profile
+    as the spudcan approaches an underlying sand layer (Figure 5a,
+    Kellezi & Gobuzi 2019): the curve starts to bend at the depth where
+    z + B/2 first crosses the clay–sand interface.
+    """
+    if z2 <= z1:
+        return np.nan
+    zs = np.arange(z1, z2 + 1e-9, dz)
+    sand_hit = False
+    vals: List[float] = []
+    for z in zs:
+        if sand_hit:
+            vals.append(0.0)
+            continue
+        i = _layer_index(z, layers)
+        layer = layers[i]
+        if layer.soil_type not in ("clay", "silt"):
+            sand_hit = True
+            vals.append(0.0)
+        else:
+            v = _interp(z, layer.su)
+            vals.append(float(v) if (np.isfinite(v) and v > 0) else 0.0)
+    return float(np.mean(vals)) if vals else np.nan
+
 def _layer_index(z: float, layers: List[SoilLayer]) -> int:
     for i, L in enumerate(layers):
         if L.z_top <= z < L.z_bot:
@@ -452,7 +484,9 @@ def clay_capacity(spud: Spudcan, z: float, layers: List[SoilLayer],
         return None
     
     cu_point = _interp(z, layers[i].su)
-    cu_avg   = _avg_over(z, z + B/2.0, layers[i].su)
+    # Cross-layer average: sand layers contribute su=0 so that the B/2
+    # averaging window correctly "sees" the approach of an underlying sand.
+    cu_avg   = _cross_layer_su_avg(z, z + B/2.0, layers)
     cu_eff   = np.nanmin([cu_point, cu_avg]) if use_min_cu else cu_avg
     
     if not np.isfinite(cu_eff) or cu_eff <= 0:
@@ -574,6 +608,26 @@ def punchthrough_capacity(spud: Spudcan, z: float, layers: List[SoilLayer],
         KsTanPhi = (3.0 * cu_c) / (max(B,1e-6) * max(gamma_s,1e-6))
         Fv = Fv_b - A * H * gamma_s + 2.0 * (H/max(B,1e-6)) * (H*gamma_s + 2.0*p0_s) * KsTanPhi * A
         return float(Fv)
+
+    # Clay over sand (soft clay underlain by sand/gravel):
+    # Punch-through failure by pushing a clay cylinder down to the sand surface.
+    # Capacity = sand bearing at interface + side friction on clay cylinder.
+    # Fpt(z) = Fv_sand(z_sand) + alpha * cu_avg(z..z_sand) * pi * B * H
+    # This DECREASES as H shrinks (footing approaches sand), joining the sand
+    # capacity curve at H=0.  Combined with the cross-layer su averaging in
+    # clay_capacity(), this produces the curved penetration profile before the
+    # sand interface (Kellezi & Gobuzi 2019, Figure 5a).
+    if top.soil_type in ("clay", "silt") and bot.soil_type == "sand":
+        z_sand = top.z_bot          # depth of clay-sand interface
+        Fv_sand = sand_capacity(spud, z_sand, layers, apply_phi_reduction=False)
+        if Fv_sand is None:
+            return None
+        cu_avg_plug = _avg_over(z, z_sand, top.su)  # within clay only
+        if not np.isfinite(cu_avg_plug) or cu_avg_plug <= 0:
+            return None
+        alpha = 1.0  # full undrained strength on cylinder wall (remoulded if St known)
+        Fpt = Fv_sand + alpha * cu_avg_plug * np.pi * B * H
+        return float(Fpt)
 
     return None
 
@@ -821,7 +875,10 @@ def compute_envelopes(
 def _penetration_for_load_MN(df: pd.DataFrame, col: str, load_MN: float) -> Optional[float]:
     x = df[col].to_numpy(dtype=float)
     z = df["depth"].to_numpy(dtype=float)
-    mask = np.isfinite(x)
+    # Exclude NaN AND zero-capacity rows (tip zone before footing engages).
+    # Without this, the interpolation jumps from the tip-zone zeros across
+    # a NaN gap to the first real capacity value, giving a spurious depth.
+    mask = np.isfinite(x) & (x > 0)
     x = x[mask]; z = z[mask]
     if x.size < 2:
         return None
