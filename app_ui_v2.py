@@ -681,7 +681,7 @@ if st.session_state.get('analysis_run', False):
     # --- Enhanced Plotting with Controls ---
     if ENHANCED_PLOTTING_AVAILABLE:
         # Use the enhanced plotting with interactive controls
-        create_streamlit_plot_with_controls(df, spud, pen)
+        create_streamlit_plot_with_controls(df, spud, pen, layers=layers)
         
         # Optional: Add a checkbox to show failure modes
         if 'squeezing_active' in df.columns:

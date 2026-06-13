@@ -23,7 +23,9 @@ def plot_penetration_curve_v4(
     x_max: float = None,
     y_max: float = None,
     fig_width: float = 10,
-    fig_height: float = 8
+    fig_height: float = 8,
+    z_cross_layer: float = None,
+    B: float = None,
 ):
     """
     Create a clean, professional penetration curve plot.
@@ -115,16 +117,33 @@ def plot_penetration_curve_v4(
     else:
         ax.set_ylim(depths_clean.max() * 1.05, 0)
     
+    # --- B/2-to-sand annotation -----------------------------------------------
+    # This line marks the depth at which the B/2 averaging window first crosses
+    # into sand. Above this depth the su average is unaffected by sand (capacity
+    # follows the standard clay formula). Below it the effective cu drops because
+    # sand contributes 0 to the average, creating the characteristic downward
+    # bend in the penetration-resistance curve.
+    if z_cross_layer is not None and z_cross_layer > 0:
+        B_str = f"B/2={B/2:.1f}m" if B is not None else "B/2"
+        ax.axhline(
+            y=z_cross_layer,
+            color='green',
+            linestyle='-.',
+            linewidth=1.5,
+            label=f'{B_str} reaches sand (z={z_cross_layer:.1f}m)',
+            zorder=2,
+        )
+
     # Legend
     ax.legend(loc='lower right', fontsize=11, framealpha=0.9)
-    
+
     # Tight layout
     plt.tight_layout()
-    
+
     return fig, ax
 
 
-def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict):
+def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict, layers=None):
     """
     Streamlit-integrated plotting function with interactive controls.
     
@@ -186,6 +205,17 @@ def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict):
         fig_width = st.slider("Width", min_value=6, max_value=16, value=10, step=1)
         fig_height = st.slider("Height", min_value=6, max_value=16, value=8, step=1)
     
+    # Compute z_cross_layer: deepest z at which the B/2 window first touches
+    # a non-clay layer (= z_first_sand - B/2). This is where the capacity
+    # curve starts to bend downward due to the cross-layer su averaging.
+    z_cross_layer = None
+    if layers is not None and spud.B > 0:
+        for lyr in layers:
+            if lyr.soil_type not in ("clay", "silt"):
+                z_first_sand = lyr.z_top
+                z_cross_layer = max(0.0, z_first_sand - spud.B / 2.0)
+                break
+
     # Create the plot
     fig, ax = plot_penetration_curve_v4(
         df=df,
@@ -195,7 +225,9 @@ def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict):
         x_max=x_max,
         y_max=y_max,
         fig_width=fig_width,
-        fig_height=fig_height
+        fig_height=fig_height,
+        z_cross_layer=z_cross_layer,
+        B=spud.B,
     )
     
     # Display in Streamlit
