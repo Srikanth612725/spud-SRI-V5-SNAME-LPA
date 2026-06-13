@@ -875,6 +875,9 @@ def compute_envelopes(
 def _penetration_for_load_MN(df: pd.DataFrame, col: str, load_MN: float) -> Optional[float]:
     x = df[col].to_numpy(dtype=float)
     z = df["depth"].to_numpy(dtype=float)
+    if load_MN <= 0:
+        finite_z = z[np.isfinite(x)]
+        return float(finite_z[0]) if finite_z.size > 0 else None
     # Exclude NaN AND zero-capacity rows (tip zone before footing engages).
     # Without this, the interpolation jumps from the tip-zone zeros across
     # a NaN gap to the first real capacity value, giving a spurious depth.
