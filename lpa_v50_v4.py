@@ -502,11 +502,13 @@ def clay_capacity(spud: Spudcan, z: float, layers: List[SoilLayer],
     else:
         Nc, sc = 5.14, 1.2
         if B > 0:
-            d_over_B = z / B
-            dc = 1.0 + 0.4 * d_over_B if d_over_B <= 1.0 else 1.0 + 0.4 * np.arctan(d_over_B)
+            # Continuous arctan form (ISO 19905-1) avoids the 6% jump at z=B
+            # that the piecewise Hansen formula creates. arctan(z/B) is
+            # differentiable everywhere and ≈ z/B for shallow depths (z/B<0.5).
+            dc = 1.0 + 0.4 * np.arctan(z / B)
         else:
             dc = 1.0
-    
+
     p0 = 0.0 if backflow_zero else _overburden(z, layers)
     Fv = (cu_eff * Nc * sc * dc + p0) * A
     return float(Fv)
