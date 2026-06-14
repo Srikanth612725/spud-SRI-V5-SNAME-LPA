@@ -3,7 +3,7 @@ improved_plotting_v4.py
 =======================
 
 Enhanced plotting functions for Spud-SRI V4 with:
-1. Clean graph showing only REAL curve + Preload line
+1. REAL curve + individual Clay and Sand envelopes (shows the bending clearly)
 2. Interactive scale controls
 3. Better readability
 
@@ -23,7 +23,9 @@ def plot_penetration_curve_v4(
     x_max: float = None,
     y_max: float = None,
     fig_width: float = 10,
-    fig_height: float = 8
+    fig_height: float = 8,
+    z_cross_layer: float = None,
+    B: float = None,
 ):
     """
     Create a clean, professional penetration curve plot.
@@ -54,77 +56,125 @@ def plot_penetration_curve_v4(
     
     # Create figure
     fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    
+
     # Extract data
     depths = df["depth"].values
     real_capacity = df["real_MN"].values
-    
-    # Filter out NaN values
-    valid_mask = ~np.isnan(real_capacity)
+
+    # ---- Clay envelope (idle_clay_MN) — shows the characteristic peak + descent ----
+    # This is the most important curve for understanding cross-layer bending.
+    # It rises with depth (standard SNAME dc factor), peaks at z_bend = z_sand − B/2,
+    # then descends as the B/2 averaging window crosses into sand (su → 0 in sand).
+    clay_cap = df["idle_clay_MN"].values if "idle_clay_MN" in df.columns else np.full_like(depths, np.nan)
+    clay_mask = np.isfinite(clay_cap) & (clay_cap > 0)
+    if clay_mask.any():
+        ax.plot(clay_cap[clay_mask], depths[clay_mask],
+                linewidth=1.8,
+                color='#1f77b4',
+                linestyle='--',
+                alpha=0.65,
+                label='Clay capacity envelope',
+                zorder=2)
+
+    # ---- Sand envelope (idle_sand_MN) ----
+    sand_cap = df["idle_sand_MN"].values if "idle_sand_MN" in df.columns else np.full_like(depths, np.nan)
+    sand_mask = np.isfinite(sand_cap) & (sand_cap > 0)
+    if sand_mask.any():
+        ax.plot(sand_cap[sand_mask], depths[sand_mask],
+                linewidth=1.8,
+                color='#8c6d31',
+                linestyle='--',
+                alpha=0.65,
+                label='Sand capacity envelope',
+                zorder=2)
+
+    # ---- REAL (governing) curve — thick, solid, on top ----
+    valid_mask = np.isfinite(real_capacity) & (real_capacity > 0)
     depths_clean = depths[valid_mask]
     real_clean = real_capacity[valid_mask]
-    
-    # Plot REAL capacity curve (thick blue line)
-    ax.plot(real_clean, depths_clean, 
-            linewidth=3, 
-            color='#1f77b4',  # Professional blue
-            label='REAL (governing)', 
-            zorder=3)
-    
-    # Plot Preload line (red dashed)
-    if x_max is not None:
-        x_preload = x_max
-    else:
-        x_preload = max(real_clean.max() * 1.2, preload_MN * 1.2)
-    
-    ax.axvline(x=preload_MN, 
-               color='red', 
-               linestyle='--', 
-               linewidth=2, 
+
+    if real_clean.size > 0:
+        ax.plot(real_clean, depths_clean,
+                linewidth=3,
+                color='#d62728',   # Strong red so it stands out above both envelopes
+                label='REAL (governing)',
+                zorder=3)
+
+    # ---- Preload vertical line ----
+    ax.axvline(x=preload_MN,
+               color='black',
+               linestyle='--',
+               linewidth=2,
                label=f'Preload ({preload_MN:.1f} MN)',
                zorder=2)
-    
-    # Plot tip offset (orange dashed horizontal line)
-    ax.axhline(y=tip_offset_m, 
-               color='orange', 
-               linestyle=':', 
-               linewidth=1.5, 
+
+    # ---- Tip offset horizontal line ----
+    ax.axhline(y=tip_offset_m,
+               color='orange',
+               linestyle=':',
+               linewidth=1.5,
                label=f'Tip offset ({tip_offset_m:.2f}m)',
                zorder=1)
-    
+
     # Formatting
     ax.set_xlabel('Leg Load (MN)', fontsize=14, fontweight='bold')
     ax.set_ylabel('Penetration of widest section (m)', fontsize=14, fontweight='bold')
-    ax.set_title(f'{rig_name} - Leg Penetration Analysis', 
+    ax.set_title(f'{rig_name} - Leg Penetration Analysis',
                  fontsize=16, fontweight='bold', pad=20)
-    
+
     # Grid
     ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-    
+
     # Invert y-axis (depth increases downward)
     ax.invert_yaxis()
-    
-    # Set limits
+
+    # ---- Auto x-limit: wide enough to show clay peak, sand curve, AND preload ----
+    all_caps = []
+    if real_clean.size > 0:
+        all_caps.append(real_clean.max())
+    if clay_mask.any():
+        all_caps.append(float(np.nanmax(clay_cap)))
+    if sand_mask.any():
+        all_caps.append(float(np.nanmax(sand_cap)))
+    all_caps.append(preload_MN)
+
     if x_max is not None:
         ax.set_xlim(0, x_max)
-    else:
-        ax.set_xlim(0, real_clean.max() * 1.1)
-    
+    elif all_caps:
+        ax.set_xlim(0, max(all_caps) * 1.15)
+
     if y_max is not None:
         ax.set_ylim(y_max, 0)
-    else:
+    elif depths_clean.size > 0:
         ax.set_ylim(depths_clean.max() * 1.05, 0)
-    
+
+    # --- B/2-to-sand annotation -----------------------------------------------
+    # This line marks the depth at which the B/2 averaging window first crosses
+    # into sand. Above this depth the su average is unaffected by sand (capacity
+    # follows the standard clay formula). Below it the effective cu drops because
+    # sand contributes 0 to the average, creating the characteristic downward
+    # bend in the penetration-resistance curve.
+    if z_cross_layer is not None and z_cross_layer > 0:
+        B_str = f"B/2={B/2:.1f}m" if B is not None else "B/2"
+        ax.axhline(
+            y=z_cross_layer,
+            color='green',
+            linestyle='-.',
+            linewidth=1.5,
+            label=f'{B_str} reaches sand (z={z_cross_layer:.1f}m)',
+            zorder=2,
+        )
+
     # Legend
     ax.legend(loc='lower right', fontsize=11, framealpha=0.9)
-    
+
     # Tight layout
     plt.tight_layout()
-    
+
     return fig, ax
 
 
-def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict):
+def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict, layers=None):
     """
     Streamlit-integrated plotting function with interactive controls.
     
@@ -186,6 +236,17 @@ def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict):
         fig_width = st.slider("Width", min_value=6, max_value=16, value=10, step=1)
         fig_height = st.slider("Height", min_value=6, max_value=16, value=8, step=1)
     
+    # Compute z_cross_layer: deepest z at which the B/2 window first touches
+    # a non-clay layer (= z_first_sand - B/2). This is where the capacity
+    # curve starts to bend downward due to the cross-layer su averaging.
+    z_cross_layer = None
+    if layers is not None and spud.B > 0:
+        for lyr in layers:
+            if lyr.soil_type not in ("clay", "silt"):
+                z_first_sand = lyr.z_top
+                z_cross_layer = max(0.0, z_first_sand - spud.B / 2.0)
+                break
+
     # Create the plot
     fig, ax = plot_penetration_curve_v4(
         df=df,
@@ -195,7 +256,9 @@ def create_streamlit_plot_with_controls(df: pd.DataFrame, spud, results: dict):
         x_max=x_max,
         y_max=y_max,
         fig_width=fig_width,
-        fig_height=fig_height
+        fig_height=fig_height,
+        z_cross_layer=z_cross_layer,
+        B=spud.B,
     )
     
     # Display in Streamlit
